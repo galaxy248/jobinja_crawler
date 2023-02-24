@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# tempetory files
+/temp
+
+# cookie file
+cookie.txt
+
+/.idea

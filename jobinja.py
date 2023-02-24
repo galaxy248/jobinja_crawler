@@ -7,6 +7,12 @@ import json
 import time
 from unidecode import unidecode
 import re
+import datetime
+import jdatetime
+from hijri_converter import Gregorian
+import cookies
+import os
+import random
 
 # %%
 class jobinjaCrawler():
@@ -23,12 +29,14 @@ class jobinjaCrawler():
                 ### use this section instead of previous block ###
                 ### accourding to this link 'https://stackoverflow.com/questions/69141055/python-requests-does-not-get-website-that-opens-on-browser'
                 ### i'm using this site 'https://sqqihao.github.io/trillworks.html' to set headers & params
+                # getting new cookies by creating a browser session with selenium
+                self.cookieObject = cookies.getCookies()
                 self.headers = {
                     'authority': 'jobinja.ir',
                     'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
                     'accept-language': 'en-US,en;q=0.9',
                     'cache-control': 'max-age=0',
-                    'cookie': '_ga=GA1.1.108802139.1675974100; logglytrackingsession=cf35bce0-3cda-473c-8cc1-74f6406d8000; XSRF-TOKEN=eyJpdiI6InFcLytHUWRUeGRyemd2Rjh1eXNqTGZ3PT0iLCJ2YWx1ZSI6Im9iMG1QdXBmYjNrZVBtQkFxY2hjN2JTRmJzdWpuekZYaUJWTFRZQmhpdTZaSGhhS3ljSEFnSEt5aCtBeVwvV3pIVXYwbjhYV1RzeEkrTVlieDZXQnRndz09IiwibWFjIjoiYzIyOGZhNDFjZWUxMmNmMjE5MWM1NmU4NmNjMjRlYzM1MGVjMDc4YWE4YjNlNTJjOWY3NzY5ZjM0M2ZmNzBiYSJ9; JSESSID=eyJpdiI6IlBhOCtkdnppakZKRjI3Vmx0NWdsWEE9PSIsInZhbHVlIjoiV2NcLzNkbWRtTlhkaks0MVpqNEhob0hOUWdXeFNaVGVIcE5sUjdTZjdqN3RmYThyN2g3RUYwZWlcLzdXMWVnYys0T2RqZE5sbFwvTnU3M1dSczV3TStleEE9PSIsIm1hYyI6IjcxNmI4NTI1NzViYTIyYWM4ODVmZmNmODNhMmM3MzM2ZGFkMGEwZmQzMDIzNzI5YzEzZmE2YzQ0Nzk4YzNkMzcifQ%3D%3D; _ga_T8HC2S1534=GS1.1.1675974099.1.1.1675979222.44.0.0',
+                    'cookie': str(open("./cookie.txt", "r", encoding="utf-8").readline()),
                     'if-none-match': 'W/"bcfde84dd07f0d9c98299f12924e62bb"',
                     'sec-ch-ua': '"Not_A Brand";v="99", "Microsoft Edge";v="109", "Chromium";v="109"',
                     'sec-ch-ua-mobile': '?0',
@@ -64,10 +72,26 @@ class jobinjaCrawler():
         self.numberOfPages = int(unidecode(self.soup.find("div", {"class": "paginator"}).findAll("li")[-2].text))
 
 
+    def __jsonFileIsEmpty(self, path: str) -> bool:
+        try:
+            if os.path.getsize(path) == 0:
+                return True
+            else:
+                return False
+        except:
+            return True
+
+
     def findjobs(self):
         self.allResults = {}
         tempResults = {}
-        
+        requestCounter = 0
+        # check crawled file is empty or not and load it if not empty
+        if not self.__jsonFileIsEmpty("jobinja.json"):
+            with open("jobinja.json", "r", encoding="utf-8") as f:
+                self.allResults = json.load(f)
+                f.close()
+            
         for page in range(1, self.numberOfPages + 1):
             # set new params
             params = (
@@ -75,14 +99,48 @@ class jobinjaCrawler():
                 ('page', str(page)),
             )
 
+            requestCounter += 1
+            if requestCounter % 5 == 0:
+                del self.headers
+                del self.cookieObject
+                self.cookieObject = cookies.getCookies()
+                self.headers = {
+                    'authority': 'jobinja.ir',
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+                    'accept-language': 'en-US,en;q=0.9',
+                    'cache-control': 'max-age=0',
+                    'cookie': str(open("./cookie.txt", "r", encoding="utf-8").readline()),
+                    'if-none-match': 'W/"bcfde84dd07f0d9c98299f12924e62bb"',
+                    'sec-ch-ua': '"Not_A Brand";v="99", "Microsoft Edge";v="109", "Chromium";v="109"',
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"Windows"',
+                    'sec-fetch-dest': 'document',
+                    'sec-fetch-mode': 'navigate',
+                    'sec-fetch-site': 'none',
+                    'sec-fetch-user': '?1',
+                    'upgrade-insecure-requests': '1',
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36 Edg/109.0.1518.78',
+                }
+
             try:
                 # request to website for every page
-                response = requests.get(self.jobsUrl + f"&page={page}", headers=self.headers, params=params)
+                response = requests.get(self.jobsUrl + f"&page={page}", headers=self.headers, params=params, timeout=10)
                 response.raise_for_status()
                 # create beautifulsoup object for first jobs page
                 soup = BeautifulSoup(response.text, "html.parser")
 
-            except:
+            except requests.exceptions.Timeout:
+                while True:
+                    try:
+                        response = requests.get(self.jobsUrl + f"&page={page}", headers=self.headers, params=params, timeout=10)
+                        response.raise_for_status()
+                        # create beautifulsoup object for first jobs page
+                        soup = BeautifulSoup(response.text, "html.parser")
+                        break
+                    except:
+                        print(f"Page [{self.jobsUrl + f'&page={page}'}] --> Status code: {response.status_code}\n")
+            
+            except Exception:
                 print(f"Page [{self.jobsUrl + f'&page={page}'}] --> Status code: {response.status_code}\n")
                 break
             
@@ -98,6 +156,21 @@ class jobinjaCrawler():
                 companyLinkInJobinja = "/".join(titleTag["href"].split("/")[0:5])
                 title = titleTag.text.strip()
 
+                # check job Ad already exists or not
+                try:
+                    flag = False
+                    if self.allResults.get(companyLinkInJobinja.split("/")[4]) != None:
+                        for tempJob in self.allResults[companyLinkInJobinja.split("/")[4]]["JobsList"]:
+                            if tempJob["JobLink"] == jobLink:
+                                # job Ad already exists
+                                flag = True
+                                break
+                        if flag:
+                            continue
+                except:
+                    pass
+
+
                 info = job.find("ul", {"class": "o-listView__itemComplementInfo"}).findAll("li")
 
                 nameOfCompany = info[0].find("span").text.split("|")
@@ -110,6 +183,27 @@ class jobinjaCrawler():
 
                 jobType = [" ".join(info[2].find("span").findNext("span").text.strip().replace("\n", " ").replace("\u200c", " ").split()[1:3])]
 
+                # find published date of the job Ad
+                date = None
+                if (dateTag := job.find("div", {"class": "o-listView__itemInfo"}).find("h2", {"class": "c-jobListView__title"}).find("span", {"class": "c-jobListView__passedDays"})) != None:
+                    if "امروز" in dateTag.text.strip():
+                        date = datetime.date.today() - datetime.timedelta(days=0)
+                    else:
+                        if "روز" in dateTag.text.strip():
+                            if (findNumber := re.search(r"\d+", unidecode(dateTag.text.strip()))) != None:
+                                date = datetime.date.today() - datetime.timedelta(days=int(findNumber.group()))
+
+                publishDate = {}
+                if date != None:
+                    publishDate["gregorian"] = date.__str__()
+                    publishDate["jalali"] = jdatetime.date.fromgregorian(date=date).__str__()
+                    publishDate["hijri"] = Gregorian(date.year, date.month, date.day).to_hijri().__str__()
+                else:
+                    publishDate["gregorian"] = None
+                    publishDate["jalali"] = None
+                    publishDate["hijri"] = None
+                
+
                 try:
                     # request to every job page
                     response = requests.get(jobLink, headers=self.headers, params=params)
@@ -117,7 +211,18 @@ class jobinjaCrawler():
                     # create beautifulsoup object
                     soup = BeautifulSoup(response.text, "html.parser")
                 
-                except:
+                except requests.exceptions.Timeout:
+                    while True:
+                        try:
+                            response = requests.get(jobLink, headers=self.headers, params=params, timeout=10)
+                            response.raise_for_status()
+                            # create beautifulsoup object for first jobs page
+                            soup = BeautifulSoup(response.text, "html.parser")
+                            break
+                        except:
+                            print(f"Page [{self.jobsUrl + f'&page={page}'}] --> Status code: {response.status_code}\n")
+                
+                except Exception:
                     print(f"Page [{self.jobsUrl + f'&page={page}'}] --> Status code: {response.status_code}\n")
                     break
 
@@ -133,6 +238,7 @@ class jobinjaCrawler():
                 companyWebsite = None
                 companySize = None
                 foundedYearOfComapny = None
+                categoryTypeLink = None
 
                 companyInformation = soup.find("div", {"class": "body"})
                 companyHeader = companyInformation.find("div", {"class": "c-companyHeader"})
@@ -147,6 +253,7 @@ class jobinjaCrawler():
                         if re.match(r"(http|https)://(www\.)?\w+\.\w{1,63}", str(Atag["href"]).strip()):
                             if re.match(r"(http|https)://(www\.)?jobinja\.\w{1,63}", str(Atag["href"]).strip()):
                                 companyType = str(Atag.text).strip()
+                                categoryTypeLink = str(Atag["href"]).strip()
                             else:
                                 companyWebsite = str(Atag["href"]).strip()
 
@@ -190,7 +297,7 @@ class jobinjaCrawler():
                     elif "نوع همکاری" in detail.text:
                         typesOfWorkTag = detail.find("div").findAll("span")
                         for type in typesOfWorkTag:
-                            if type.text in ["دورکاری", "کارآموزی"]:
+                            if str(type.text).strip() in ["دورکاری", "کارآموزی", "تمام‌ وقت", "پاره‌ وقت"] and str(type.text).strip() not in jobType:
                                 jobType.append(type.text)
 
                     # find work experience
@@ -271,6 +378,7 @@ class jobinjaCrawler():
                     self.allResults[companyLinkInJobinja.split("/")[4]]["FoundedYearOfComapny"] = foundedYearOfComapny
                     self.allResults[companyLinkInJobinja.split("/")[4]]["PremiumCompanyInJobinja"] = premiumCompany
                     self.allResults[companyLinkInJobinja.split("/")[4]]["CompanyImage"] = companyImg
+                    self.allResults[companyLinkInJobinja.split("/")[4]]["CategoryTypeLink"] = categoryTypeLink
                     self.allResults[companyLinkInJobinja.split("/")[4]]["JobsList"] = []
                     tempResults["Title"] = title
                     tempResults["Premium"] = checkPremiumJobAdvertising
@@ -283,7 +391,8 @@ class jobinjaCrawler():
                     tempResults["MilitaryState"] = militaryState
                     tempResults["Encouraged"] = encouraged
                     tempResults["JobLinkShort"] = uniqueURL
-                    tempResults["jobGroup"] = jobGroup
+                    tempResults["JobGroup"] = jobGroup
+                    tempResults["PublishDate"] = publishDate
                     self.allResults[companyLinkInJobinja.split("/")[4]]["JobsList"].append(tempResults)
 
                 # exist -> only append new job
@@ -299,16 +408,21 @@ class jobinjaCrawler():
                     tempResults["MilitaryState"] = militaryState
                     tempResults["Encouraged"] = encouraged
                     tempResults["JobLinkShort"] = uniqueURL
-                    tempResults["jobGroup"] = jobGroup
+                    tempResults["JobGroup"] = jobGroup
+                    tempResults["PublishDate"] = publishDate
                     self.allResults[companyLinkInJobinja.split("/")[4]]["JobsList"].append(tempResults)
 
+                self.exportToJson()
+                time.sleep(random.random())
             # temp line, it will delete in the future
-            break
+            # break
+            time.sleep(1)
 
     def exportToJson(self):
         try:
             with open("jobinja.json", "w", encoding="utf-8") as file:
                 json.dump(self.allResults, file, ensure_ascii=False, indent=4)
+                file.close()
         except:
             raise ValueError("Can Not Save !")
 
